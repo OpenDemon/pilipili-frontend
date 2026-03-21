@@ -4,6 +4,7 @@
  *
  * 配置通过 POST /api/settings/keys 保存到后端
  * 状态通过 GET /api/settings/keys/status 从后端读取
+ * 测试通过 POST /api/settings/keys/test 验证 Key 有效性
  */
 
 import { useState, useEffect } from "react";
@@ -20,9 +21,9 @@ import {
   ChevronUp,
   ExternalLink,
   Loader2,
-  RefreshCw,
   AlertCircle,
   CheckCircle2,
+  Play,
 } from "lucide-react";
 import { settingsApi, healthApi, ApiKeysStatus } from "@/lib/api";
 
@@ -40,6 +41,7 @@ interface ApiField {
   secretValue?: string;
   enabled: boolean;
   isConfigured?: boolean;
+  testService?: string; // 对应后端 test_api_key 的 service 参数
 }
 
 const DEFAULT_FIELDS: ApiField[] = [
@@ -53,6 +55,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     apiKey: "llm_api_key",
     value: "",
     enabled: true,
+    testService: "llm",
   },
   {
     id: "kimi",
@@ -64,6 +67,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     apiKey: "llm_api_key",
     value: "",
     enabled: false,
+    testService: "llm",
   },
   {
     id: "minimax_llm",
@@ -75,6 +79,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     apiKey: "llm_api_key",
     value: "",
     enabled: false,
+    testService: "llm",
   },
   {
     id: "gemini",
@@ -86,6 +91,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     apiKey: "llm_api_key",
     value: "",
     enabled: false,
+    testService: "llm",
   },
   {
     id: "nano_banana",
@@ -97,6 +103,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     apiKey: "image_gen_api_key",
     value: "",
     enabled: true,
+    testService: "image_gen",
   },
   {
     id: "kling",
@@ -111,6 +118,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     value: "",
     secretValue: "",
     enabled: true,
+    testService: "kling",
   },
   {
     id: "seedance",
@@ -122,6 +130,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     apiKey: "seedance_api_key",
     value: "",
     enabled: false,
+    testService: "seedance",
   },
   {
     id: "minimax_tts",
@@ -133,6 +142,7 @@ const DEFAULT_FIELDS: ApiField[] = [
     apiKey: "tts_api_key",
     value: "",
     enabled: true,
+    testService: "tts",
   },
   {
     id: "mem0",
@@ -163,6 +173,10 @@ export default function Settings() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [llmProvider, setLlmProvider] = useState("deepseek");
+  const [testingService, setTestingService] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<
+    Record<string, { success: boolean; message: string }>
+  >({});
 
   // 检查后端健康状态 + 加载已配置的 Key 状态
   useEffect(() => {
@@ -171,11 +185,9 @@ export default function Settings() {
         await healthApi.check();
         setBackendOnline(true);
 
-        // 获取 Key 配置状态（只返回是否已配置，不返回实际 Key 值）
         const status: ApiKeysStatus = await settingsApi.getKeysStatus();
         setLlmProvider(status.llm.provider);
 
-        // 更新字段的已配置状态
         setFields((prev) =>
           prev.map((f) => {
             let isConfigured = false;
@@ -222,10 +234,45 @@ export default function Settings() {
     );
   };
 
+  const handleTestKey = async (field: ApiField) => {
+    if (!field.testService || !backendOnline) return;
+
+    // 如果该服务未配置且当前输入框也没有值，提示先保存
+    if (!field.isConfigured && !field.value.trim()) {
+      toast.error("请先填写 API Key 并保存，然后再测试连接");
+      return;
+    }
+
+    setTestingService(field.id);
+    setTestResults((prev) => {
+      const next = { ...prev };
+      delete next[field.id];
+      return next;
+    });
+
+    try {
+      const result = await settingsApi.testKey(field.testService);
+      setTestResults((prev) => ({ ...prev, [field.id]: result }));
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "测试失败";
+      setTestResults((prev) => ({
+        ...prev,
+        [field.id]: { success: false, message: msg },
+      }));
+      toast.error(`测试失败：${msg}`);
+    } finally {
+      setTestingService(null);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      // 构建更新请求
       const req: import("@/lib/api").UpdateApiKeysRequest = {
         llm_provider: llmProvider,
       };
@@ -260,6 +307,8 @@ export default function Settings() {
           return { ...f, isConfigured, value: "", secretValue: "" };
         })
       );
+      // 清除旧的测试结果
+      setTestResults({});
     } catch (err) {
       const msg = err instanceof Error ? err.message : "保存失败";
       toast.error(`保存失败：${msg}`);
@@ -324,7 +373,7 @@ export default function Settings() {
             ) : (
               <Check size={14} />
             )}
-            {saving ? "保存中..." : "保存配置"}
+            保存配置
           </Button>
         </div>
       </header>
@@ -434,118 +483,164 @@ export default function Settings() {
 
                 {expanded && (
                   <div className="border-t border-border divide-y divide-border">
-                    {catFields.map((field) => (
-                      <div key={field.id} className="px-6 py-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1 mr-4">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm font-semibold text-foreground">
-                                {field.name}
-                              </span>
-                              {field.isConfigured && (
-                                <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                  <Check size={10} />
-                                  已配置
+                    {catFields.map((field) => {
+                      const testResult = testResults[field.id];
+                      const isTesting = testingService === field.id;
+
+                      return (
+                        <div key={field.id} className="px-6 py-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1 mr-4">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-semibold text-foreground">
+                                  {field.name}
                                 </span>
+                                {field.isConfigured && (
+                                  <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                    <Check size={10} />
+                                    已配置
+                                  </span>
+                                )}
+                                {testResult && (
+                                  <span
+                                    className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
+                                      testResult.success
+                                        ? "text-emerald-600 bg-emerald-50"
+                                        : "text-red-600 bg-red-50"
+                                    }`}
+                                  >
+                                    {testResult.success ? (
+                                      <CheckCircle2 size={10} />
+                                    ) : (
+                                      <AlertCircle size={10} />
+                                    )}
+                                    {testResult.success ? "连接正常" : "连接失败"}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed">
+                                {field.description}
+                              </p>
+                              {/* 测试失败详情 */}
+                              {testResult && !testResult.success && (
+                                <p className="text-xs text-red-500 mt-1">
+                                  {testResult.message}
+                                </p>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              {field.description}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <a
-                              href={field.docsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                            >
-                              获取 Key
-                              <ExternalLink size={11} />
-                            </a>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={field.enabled}
-                                onChange={(e) =>
-                                  updateField(field.id, "enabled", e.target.checked)
-                                }
-                                className="sr-only peer"
-                              />
-                              <div className="w-9 h-5 bg-secondary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
-                            </label>
-                          </div>
-                        </div>
-
-                        {field.enabled && (
-                          <div className="space-y-2">
-                            <div className="relative">
-                              <input
-                                type={showValues[field.id] ? "text" : "password"}
-                                value={field.value}
-                                onChange={(e) =>
-                                  updateField(field.id, "value", e.target.value)
-                                }
-                                placeholder={
-                                  field.isConfigured
-                                    ? "已配置（输入新值以更新）"
-                                    : field.placeholder
-                                }
-                                className="w-full text-sm px-3 py-2 pr-10 rounded-lg border border-border bg-background font-mono focus:outline-none focus:ring-1 focus:ring-ring"
-                              />
-                              <button
-                                onClick={() => toggleShow(field.id)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            <div className="flex items-center gap-2 shrink-0">
+                              {/* 测试连接按钮 */}
+                              {field.testService && field.isConfigured && (
+                                <button
+                                  onClick={() => handleTestKey(field)}
+                                  disabled={isTesting || !backendOnline}
+                                  className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${
+                                    isTesting
+                                      ? "border-border text-muted-foreground cursor-wait"
+                                      : "border-primary/30 text-primary hover:bg-primary/5 hover:border-primary/50"
+                                  }`}
+                                >
+                                  {isTesting ? (
+                                    <Loader2 size={11} className="animate-spin" />
+                                  ) : (
+                                    <Play size={11} />
+                                  )}
+                                  {isTesting ? "测试中..." : "测试连接"}
+                                </button>
+                              )}
+                              <a
+                                href={field.docsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
                               >
-                                {showValues[field.id] ? (
-                                  <EyeOff size={14} />
-                                ) : (
-                                  <Eye size={14} />
-                                )}
-                              </button>
+                                获取 Key
+                                <ExternalLink size={11} />
+                              </a>
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={field.enabled}
+                                  onChange={(e) =>
+                                    updateField(field.id, "enabled", e.target.checked)
+                                  }
+                                  className="sr-only peer"
+                                />
+                                <div className="w-9 h-5 bg-secondary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
+                              </label>
                             </div>
-                            {/* Secret Key 字段（如 Kling） */}
-                            {field.apiSecretKey && (
+                          </div>
+
+                          {field.enabled && (
+                            <div className="space-y-2">
                               <div className="relative">
                                 <input
-                                  type={
-                                    showValues[`${field.id}_secret`]
-                                      ? "text"
-                                      : "password"
-                                  }
-                                  value={field.secretValue || ""}
+                                  type={showValues[field.id] ? "text" : "password"}
+                                  value={field.value}
                                   onChange={(e) =>
-                                    updateField(
-                                      field.id,
-                                      "secretValue",
-                                      e.target.value
-                                    )
+                                    updateField(field.id, "value", e.target.value)
                                   }
                                   placeholder={
                                     field.isConfigured
-                                      ? "Secret 已配置（输入新值以更新）"
-                                      : field.secretPlaceholder || "API Secret"
+                                      ? "已配置（输入新值以更新）"
+                                      : field.placeholder
                                   }
                                   className="w-full text-sm px-3 py-2 pr-10 rounded-lg border border-border bg-background font-mono focus:outline-none focus:ring-1 focus:ring-ring"
                                 />
                                 <button
-                                  onClick={() =>
-                                    toggleShow(`${field.id}_secret`)
-                                  }
+                                  onClick={() => toggleShow(field.id)}
                                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                                 >
-                                  {showValues[`${field.id}_secret`] ? (
+                                  {showValues[field.id] ? (
                                     <EyeOff size={14} />
                                   ) : (
                                     <Eye size={14} />
                                   )}
                                 </button>
                               </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                              {/* Secret Key 字段（如 Kling） */}
+                              {field.apiSecretKey && (
+                                <div className="relative">
+                                  <input
+                                    type={
+                                      showValues[`${field.id}_secret`]
+                                        ? "text"
+                                        : "password"
+                                    }
+                                    value={field.secretValue || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        field.id,
+                                        "secretValue",
+                                        e.target.value
+                                      )
+                                    }
+                                    placeholder={
+                                      field.isConfigured
+                                        ? "Secret 已配置（输入新值以更新）"
+                                        : field.secretPlaceholder || "API Secret"
+                                    }
+                                    className="w-full text-sm px-3 py-2 pr-10 rounded-lg border border-border bg-background font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+                                  />
+                                  <button
+                                    onClick={() =>
+                                      toggleShow(`${field.id}_secret`)
+                                    }
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                  >
+                                    {showValues[`${field.id}_secret`] ? (
+                                      <EyeOff size={14} />
+                                    ) : (
+                                      <Eye size={14} />
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

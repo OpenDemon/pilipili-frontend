@@ -203,6 +203,13 @@ export const settingsApi = {
 
   /** 获取 API Keys 配置状态 */
   getKeysStatus: () => request<ApiKeysStatus>("/api/settings/keys/status"),
+
+  /** 测试指定服务的 API Key 连接 */
+  testKey: (service: string) =>
+    request<{ success: boolean; message: string }>("/api/settings/keys/test", {
+      method: "POST",
+      body: JSON.stringify({ service }),
+    }),
 };
 
 // ─── Health API ───────────────────────────────────────────────────────────────
