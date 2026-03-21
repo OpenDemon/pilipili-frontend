@@ -65,7 +65,7 @@ const VS_TABLE = [
   { dim: "主体一致性", libtv: "提示词引导", huobao: "参考图上传", ours: "Nano Banana 首帧锁定 + Kling Reference API" },
   { dim: "最终交付", libtv: "手动下载导入剪映", huobao: "压制 MP4", ours: "自动生成剪映草稿 + MP4 双输出" },
   { dim: "记忆系统", libtv: "无", huobao: "无", ours: "Mem0 数字孪生，越用越懂你" },
-  { dim: "Agent 调用", libtv: "无", huobao: "无", ours: "封装为 Manus Skill，可被任意 Agent 调用" },
+  { dim: "Agent 调用", libtv: "无", huobao: "无", ours: "封装为标准 Skill，可被任意 Agent 调用" },
 ];
 
 export default function Home() {
