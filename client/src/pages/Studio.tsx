@@ -878,6 +878,7 @@ export default function Studio() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [backendOnline, setBackendOnline] = useState(false);
 
   const {
     state: workflow,
@@ -891,6 +892,24 @@ export default function Studio() {
   } = useWorkflow();
 
   const { projects, refetch: refetchProjects } = useProjects();
+
+  // 独立后端健康检查（每 5 秒轮询一次）
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/health`,
+          { signal: AbortSignal.timeout(3000) }
+        );
+        setBackendOnline(res.ok);
+      } catch {
+        setBackendOnline(false);
+      }
+    };
+    check();
+    const timer = setInterval(check, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   // 恢复已有项目（URL 中有 projectId 时）
   useEffect(() => {
@@ -1036,7 +1055,7 @@ export default function Studio() {
           stage={workflow.stage}
           onConfirmScript={handleConfirmScript}
           onCancelScript={handleCancelScript}
-          isConnected={workflow.isConnected}
+          isConnected={backendOnline}
         />
         {workflow.requiresReview && workflow.scenes.length > 0 && (
           <SceneReviewPanel
