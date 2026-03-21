@@ -1011,8 +1011,9 @@ export default function Studio() {
   const handleDownload = async () => {
     if (!workflow.projectId) return;
     try {
-      const links = await projectApi.getDownloadLinks(workflow.projectId);
-      window.open(links.final_video, "_blank");
+      const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      const url = `${apiBase}/api/projects/${workflow.projectId}/download/video`;
+      window.open(url, "_blank");
     } catch {
       toast.error("获取下载链接失败，请检查后端服务");
     }
@@ -1021,8 +1022,9 @@ export default function Studio() {
   const handleExportDraft = async () => {
     if (!workflow.projectId) return;
     try {
-      const links = await projectApi.getDownloadLinks(workflow.projectId);
-      window.open(links.draft_dir, "_blank");
+      const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      const url = `${apiBase}/api/projects/${workflow.projectId}/download/draft`;
+      window.open(url, "_blank");
     } catch {
       toast.error("获取草稿链接失败");
     }
