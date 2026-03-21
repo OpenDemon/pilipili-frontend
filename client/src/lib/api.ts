@@ -191,6 +191,34 @@ export const projectApi = {
     ),
 };
 
+// ─── Upload API ──────────────────────────────────────────────────────────────
+
+export interface UploadResult {
+  path: string;
+  filename: string;
+  type: "image" | "video_frame";
+  message: string;
+}
+
+export const uploadApi = {
+  /** 上传角色参考图（图片或视频，视频会自动截帧） */
+  uploadReference: async (file: File): Promise<UploadResult> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const url = `${API_BASE}/api/upload/reference`;
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
+      // 注意：不设置 Content-Type，让浏览器自动设置 multipart/form-data boundary
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+};
+
 // ─── Settings API ─────────────────────────────────────────────────────────────
 
 export const settingsApi = {

@@ -45,7 +45,7 @@ import {
 } from "lucide-react";
 import { useWorkflow, AgentLog } from "@/hooks/useWorkflow";
 import { useProjects } from "@/hooks/useProjects";
-import { Scene, WorkflowStage, projectApi } from "@/lib/api";
+import { Scene, WorkflowStage, projectApi, uploadApi, UploadResult } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -271,6 +271,10 @@ function ChatPanel({
   onConfirmScript,
   onCancelScript,
   isConnected,
+  referenceImages,
+  onUploadReference,
+  onRemoveReference,
+  isUploading,
 }: {
   messages: ChatMessage[];
   onSend: (msg: string) => void;
@@ -278,9 +282,14 @@ function ChatPanel({
   onConfirmScript: () => void;
   onCancelScript: () => void;
   isConnected: boolean;
+  referenceImages: UploadResult[];
+  onUploadReference: (file: File) => void;
+  onRemoveReference: (index: number) => void;
+  isUploading: boolean;
 }) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -296,6 +305,14 @@ function ChatPanel({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onUploadReference(file);
+      e.target.value = ""; // 重置以便重复上传同一文件
     }
   };
 
@@ -373,7 +390,55 @@ function ChatPanel({
 
       {/* Input */}
       <div className="px-6 py-4 border-t border-border bg-white">
+        {/* 角色参考图预览 */}
+        {referenceImages.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {referenceImages.map((ref, idx) => (
+              <div key={idx} className="relative group">
+                <div className="w-14 h-14 rounded-lg border border-border overflow-hidden bg-secondary">
+                  <div className="w-full h-full flex items-center justify-center">
+                    <User size={20} className="text-muted-foreground" />
+                  </div>
+                </div>
+                <button
+                  onClick={() => onRemoveReference(idx)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs hover:bg-red-600 transition-colors"
+                >
+                  <X size={10} />
+                </button>
+                <span className="absolute bottom-0 left-0 right-0 text-center text-[9px] bg-black/50 text-white rounded-b-lg py-0.5 truncate px-1">
+                  {ref.type === "video_frame" ? "视频截帧" : "参考图"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-end gap-3">
+          {/* 隐藏的文件输入 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+
+          {/* 上传参考图按钮 */}
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isGenerating || isUploading}
+            className="h-14 w-14 shrink-0 rounded-xl border-dashed"
+            title="上传角色参考图/视频（保持人物一致性）"
+          >
+            {isUploading ? (
+              <Loader2 size={18} className="animate-spin text-muted-foreground" />
+            ) : (
+              <Plus size={18} className="text-muted-foreground" />
+            )}
+          </Button>
+
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -381,7 +446,9 @@ function ChatPanel({
             placeholder={
               isGenerating
                 ? "视频生成中，请稍候..."
-                : "描述你想要的视频内容，如：展示 AI 芯片的科技感，蓝紫色调，60秒"
+                : referenceImages.length > 0
+                  ? "已上传参考图，描述你想要的视频内容..."
+                  : "描述你想要的视频内容，左侧 + 可上传角色参考图"
             }
             disabled={isGenerating}
             className="flex-1 min-h-[56px] max-h-[120px] resize-none text-sm"
@@ -400,6 +467,11 @@ function ChatPanel({
             )}
           </Button>
         </div>
+        {referenceImages.length === 0 && !isGenerating && (
+          <p className="text-xs text-muted-foreground mt-2 ml-[68px]">
+            💡 点击左侧 + 上传角色参考图或视频，可保持全片人物一致性
+          </p>
+        )}
       </div>
     </div>
   );
@@ -879,6 +951,8 @@ export default function Studio() {
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [backendOnline, setBackendOnline] = useState(false);
+  const [referenceImages, setReferenceImages] = useState<UploadResult[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const {
     state: workflow,
@@ -962,6 +1036,28 @@ export default function Studio() {
     ]);
   };
 
+  const handleUploadReference = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const result = await uploadApi.uploadReference(file);
+      setReferenceImages((prev) => [...prev, result]);
+      toast.success(
+        result.type === "video_frame"
+          ? `视频已截取关键帧作为参考图`
+          : `参考图上传成功`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "上传失败";
+      toast.error(`上传失败：${msg}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRemoveReference = (index: number) => {
+    setReferenceImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async (input: string) => {
     // 重置状态
     reset();
@@ -978,9 +1074,13 @@ export default function Studio() {
       ? (engineMatch[0] as "kling" | "seedance")
       : "auto";
 
+    const refInfo = referenceImages.length > 0
+      ? `\n**角色参考图**：${referenceImages.length} 张（将保持人物一致性）`
+      : "";
+
     addChatMessage(
       "assistant",
-      `好的！我已理解你的需求：\n\n**主题**：${input}\n**目标时长**：${duration}s\n**视频引擎**：${engine === "auto" ? "智能路由" : engine.toUpperCase()}\n\n正在调用 LLM 生成分镜脚本，请稍候...`
+      `好的！我已理解你的需求：\n\n**主题**：${input}\n**目标时长**：${duration}s\n**视频引擎**：${engine === "auto" ? "智能路由" : engine.toUpperCase()}${refInfo}\n\n正在调用 LLM 生成分镜脚本，请稍候...`
     );
 
     try {
@@ -989,6 +1089,7 @@ export default function Studio() {
         duration,
         engine,
         addSubtitles: true,
+        referenceImages: referenceImages.map((r) => r.path),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "启动失败";
@@ -1058,6 +1159,10 @@ export default function Studio() {
           onConfirmScript={handleConfirmScript}
           onCancelScript={handleCancelScript}
           isConnected={backendOnline}
+          referenceImages={referenceImages}
+          onUploadReference={handleUploadReference}
+          onRemoveReference={handleRemoveReference}
+          isUploading={isUploading}
         />
         {workflow.requiresReview && workflow.scenes.length > 0 && (
           <SceneReviewPanel
