@@ -189,7 +189,7 @@ function SidebarNav({
 
   return (
     <aside
-      className="flex flex-col border-r border-border bg-white transition-all duration-300 shrink-0"
+      className="flex flex-col border-r border-border bg-white transition-all duration-300 shrink-0 h-screen"
       style={{ width: collapsed ? 64 : 220 }}
     >
       <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
@@ -957,7 +957,7 @@ function AnalysisPanel({
   const result = editableResult;
 
   return (
-    <aside className="w-96 border-l border-border bg-white flex flex-col shrink-0" style={{ minHeight: 0 }}>
+    <aside className="w-96 border-l border-border bg-white flex flex-col shrink-0 h-screen" style={{ minHeight: 0 }}>
       {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
@@ -979,8 +979,8 @@ function AnalysisPanel({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto overflow-x-auto">
+        <div className="p-4 space-y-4 min-w-0">
           {/* 上传区 */}
           {!analysisData && (
             <div
@@ -1241,7 +1241,7 @@ function AgentConsole({
   }
 
   return (
-    <aside className="w-72 border-l border-border bg-white flex flex-col shrink-0" style={{ minHeight: 0 }}>
+    <aside className="w-72 border-l border-border bg-white flex flex-col shrink-0 h-screen" style={{ minHeight: 0 }}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${
