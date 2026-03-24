@@ -8,6 +8,8 @@ const WS_BASE = import.meta.env.VITE_WS_URL || "ws://localhost:8000";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type ShotMode = "multi_ref" | "first_end_frame" | "t2v" | "i2v";
+
 export interface Scene {
   scene_id: number;
   duration: number;
@@ -18,6 +20,9 @@ export interface Scene {
   camera_motion: string;
   style_tags: string[];
   reference_character?: string;
+  // v2.0 新增
+  shot_mode?: ShotMode;
+  character_refs?: string[];
 }
 
 export interface VideoScript {
@@ -112,6 +117,52 @@ export interface UpdateApiKeysRequest {
   kling_api_secret?: string;
   seedance_api_key?: string;
   mem0_api_key?: string;
+}
+
+// ─── Reference Video Analysis Types (v2.0) ───────────────────────────────────
+
+export interface CharacterInfo {
+  character_id: number;
+  name: string;
+  description: string;
+  appearance_prompt: string;
+  replacement_image?: string;
+}
+
+export interface ReferenceScene {
+  scene_id: number;
+  duration: number;
+  image_prompt: string;
+  video_prompt: string;
+  voiceover: string;
+  shot_mode: ShotMode;
+  transition: string;
+  camera_motion: string;
+  style_tags: string[];
+}
+
+export interface ReferenceVideoAnalysisResult {
+  title: string;
+  style: string;
+  aspect_ratio: string;
+  total_duration: number;
+  bgm_style: string;
+  color_grade: string;
+  overall_prompt: string;
+  characters: CharacterInfo[];
+  scenes: ReferenceScene[];
+  reverse_prompts: string[];
+  raw_analysis: string;
+}
+
+export interface ReferenceAnalysisResponse {
+  analysis_id: string;
+  status: "processing" | "completed" | "failed";
+  filename?: string;
+  file_path?: string;
+  created_at?: string;
+  result?: ReferenceVideoAnalysisResult;
+  error?: string;
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -209,7 +260,74 @@ export const uploadApi = {
     const res = await fetch(url, {
       method: "POST",
       body: formData,
-      // 注意：不设置 Content-Type，让浏览器自动设置 multipart/form-data boundary
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+};
+
+// ─── Reference Video Analysis API (v2.0) ─────────────────────────────────────
+
+export const analyzeApi = {
+  /** 上传对标视频，触发 Gemini 分析（返回 analysis_id，需轮询结果） */
+  uploadVideo: async (file: File): Promise<{ analysis_id: string; status: string; message: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const url = `${API_BASE}/api/analyze/upload`;
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** 轮询对标视频分析结果 */
+  getResult: (analysisId: string) =>
+    request<ReferenceAnalysisResponse>(`/api/analyze/${analysisId}`),
+
+  /** 为某个人物上传替换参考图（图片或视频） */
+  replaceCharacter: async (
+    analysisId: string,
+    characterId: number,
+    file: File
+  ): Promise<{ message: string; character_id: number; replacement_image: string; path: string }> => {
+    const formData = new FormData();
+    formData.append("character_id", String(characterId));
+    formData.append("file", file);
+    const url = `${API_BASE}/api/analyze/${analysisId}/replace-character`;
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** 基于对标视频分析结果直接创建新项目 */
+  createProjectFromAnalysis: async (
+    analysisId: string,
+    options?: { topic?: string; video_engine?: string; add_subtitles?: boolean }
+  ): Promise<{ project_id: string; message: string; reference_images_count: number }> => {
+    const formData = new FormData();
+    if (options?.topic) formData.append("topic", options.topic);
+    if (options?.video_engine) formData.append("video_engine", options.video_engine);
+    if (options?.add_subtitles !== undefined) {
+      formData.append("add_subtitles", String(options.add_subtitles));
+    }
+    const url = `${API_BASE}/api/analyze/${analysisId}/create-project`;
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({ detail: res.statusText }));
@@ -277,7 +395,6 @@ export class WorkflowWebSocket {
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      // 连接成功，清除重连定时器
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
@@ -291,7 +408,7 @@ export class WorkflowWebSocket {
           this.onMessage(data as WorkflowStatus);
         }
       } catch {
-        // 忽略非 JSON 消息（如 pong）
+        // 忽略非 JSON 消息
       }
     };
 
@@ -301,7 +418,6 @@ export class WorkflowWebSocket {
 
     this.ws.onclose = () => {
       if (this.shouldReconnect) {
-        // 3 秒后重连
         this.reconnectTimer = setTimeout(() => this._connect(), 3000);
       }
     };

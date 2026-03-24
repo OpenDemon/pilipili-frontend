@@ -45,7 +45,8 @@ import {
 } from "lucide-react";
 import { useWorkflow, AgentLog } from "@/hooks/useWorkflow";
 import { useProjects } from "@/hooks/useProjects";
-import { Scene, WorkflowStage, projectApi, uploadApi, UploadResult } from "@/lib/api";
+import { Scene, WorkflowStage, projectApi, uploadApi, UploadResult, ReferenceVideoAnalysisResult } from "@/lib/api";
+import ReferenceVideoPanel from "@/components/ReferenceVideoPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -477,6 +478,13 @@ function ChatPanel({
   );
 }
 
+const SHOT_MODE_BADGE: Record<string, { label: string; cls: string }> = {
+  multi_ref:       { label: "多参考", cls: "bg-violet-100 text-violet-700 border-violet-200" },
+  first_end_frame: { label: "首尾帧", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  t2v:             { label: "文生视频", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  i2v:             { label: "图生视频", cls: "bg-sky-100 text-sky-700 border-sky-200" },
+};
+
 function SceneCard({
   scene,
   onUpdate,
@@ -485,6 +493,7 @@ function SceneCard({
   onUpdate: (id: number, field: keyof Scene, value: string | number | string[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const shotBadge = scene.shot_mode ? SHOT_MODE_BADGE[scene.shot_mode] : null;
 
   return (
     <div className="rounded-xl border border-border bg-white overflow-hidden">
@@ -501,11 +510,16 @@ function SceneCard({
             {scene.scene_id}
           </span>
           <span className="text-xs font-medium text-foreground">
-            分镜 {scene.scene_id}
+            分镇 {scene.scene_id}
           </span>
           <Badge variant="outline" className="text-xs py-0 h-4">
             {scene.duration}s
           </Badge>
+          {shotBadge && (
+            <span className={`text-[10px] px-1.5 py-0 rounded border font-medium ${shotBadge.cls}`}>
+              {shotBadge.label}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">{scene.transition}</span>
@@ -650,6 +664,7 @@ function AgentConsole({
   onDownload,
   onExportDraft,
   onFeedback,
+  onCreateProjectFromAnalysis,
 }: {
   logs: AgentLog[];
   stage: WorkflowStage;
@@ -659,10 +674,12 @@ function AgentConsole({
   onDownload: () => void;
   onExportDraft: () => void;
   onFeedback: (rating: number) => void;
+  onCreateProjectFromAnalysis: (analysisId: string, result: ReferenceVideoAnalysisResult) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [feedbackGiven, setFeedbackGiven] = useState(false);
   const [hoveredStar, setHoveredStar] = useState(0);
+  const [consoleTab, setConsoleTab] = useState<"agent" | "analyze">("agent");
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -727,6 +744,14 @@ function AgentConsole({
           }`}
           title={STAGE_LABELS[stage]}
         />
+        {/* 对标分析快捷图标 */}
+        <button
+          onClick={() => { onToggle(); setConsoleTab("analyze"); }}
+          className="p-2 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          title="对标视频分析"
+        >
+          <BookOpen size={16} />
+        </button>
       </div>
     );
   }
@@ -735,30 +760,54 @@ function AgentConsole({
     <aside className="w-80 border-l border-border bg-white flex flex-col shrink-0">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              stage === "failed"
-                ? "bg-red-400"
-                : stage === "completed"
-                ? "bg-emerald-400"
-                : stage === "idle"
-                ? "bg-gray-300"
-                : "bg-blue-400 animate-pulse"
+        <div className="flex items-center gap-1 flex-1">
+          {/* 标签切换 */}
+          <button
+            onClick={() => setConsoleTab("agent")}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              consoleTab === "agent"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground"
             }`}
-          />
-          <span className="text-sm font-semibold text-foreground">
-            Agent 控制台
-          </span>
+          >
+            <div
+              className={`w-1.5 h-1.5 rounded-full ${
+                stage === "failed" ? "bg-red-400" :
+                stage === "completed" ? "bg-emerald-400" :
+                stage === "idle" ? "bg-gray-300" : "bg-blue-400 animate-pulse"
+              }`}
+            />
+            Agent 日志
+          </button>
+          <button
+            onClick={() => setConsoleTab("analyze")}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              consoleTab === "analyze"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+            }`}
+          >
+            <BookOpen size={11} />
+            对标分析
+          </button>
         </div>
         <button
           onClick={onToggle}
-          className="text-muted-foreground hover:text-foreground transition-colors"
+          className="text-muted-foreground hover:text-foreground transition-colors ml-2"
         >
           <ChevronRight size={16} />
         </button>
       </div>
 
+      {/* 对标视频分析面板 */}
+      {consoleTab === "analyze" && (
+        <div className="flex-1 overflow-y-auto px-4 py-4 bg-zinc-950">
+          <ReferenceVideoPanel onCreateProject={onCreateProjectFromAnalysis} />
+        </div>
+      )}
+
+      {/* Agent 日志面板 */}
+      {consoleTab === "agent" && <>
       {/* Stage progress */}
       <div className="px-4 py-3 border-b border-border">
         <div className="flex items-center justify-between mb-2">
@@ -939,6 +988,7 @@ function AgentConsole({
           </Button>
         </div>
       )}
+      </> }
     </aside>
   );
 }
@@ -1137,6 +1187,50 @@ export default function Studio() {
     restoreProject(id);
   };
 
+  // 对标视频分析完成后，基于分析结果创建项目
+  const handleCreateProjectFromAnalysis = async (
+    analysisId: string,
+    result: ReferenceVideoAnalysisResult
+  ) => {
+    reset();
+    setMessages([]);
+
+    // 收集替换参考图
+    const replacedChars = result.characters.filter(c => c.replacement_image);
+
+    addChatMessage(
+      "assistant",
+      `对标视频分析完成！正在基于分析结果创建项目...
+
+**标题**：${result.title}
+**分镜数**：${result.scenes.length} 个
+**人物替换**：${replacedChars.length > 0 ? replacedChars.map(c => c.name).join("、") : "无（保持原始风格）"}
+
+正在调用 LLM 生成分镇脚本，请稍候...`
+    );
+
+    try {
+      await startWorkflow({
+        topic: result.title,
+        duration: Math.round(result.total_duration) || 60,
+        engine: "kling",
+        addSubtitles: true,
+        referenceImages: replacedChars
+          .filter(c => c.replacement_image)
+          .map(c => c.replacement_image as string),
+        style: result.overall_prompt || result.style,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "启动失败";
+      addChatMessage(
+        "assistant",
+        `❌ 工作流启动失败：${msg}
+
+请确认后端服务已启动，并检查 API Keys 配置。`
+      );
+    }
+  };
+
   return (
     <div
       className="flex h-screen overflow-hidden"
@@ -1184,6 +1278,7 @@ export default function Studio() {
         onDownload={handleDownload}
         onExportDraft={handleExportDraft}
         onFeedback={submitFeedback}
+        onCreateProjectFromAnalysis={handleCreateProjectFromAnalysis}
       />
     </div>
   );
