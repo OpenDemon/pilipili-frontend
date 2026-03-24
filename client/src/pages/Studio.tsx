@@ -613,14 +613,17 @@ function CharacterReplaceCard({
   character,
   analysisId,
   onReplaced,
+  onRemoved,
   onPromptChange,
 }: {
   character: CharacterInfo;
   analysisId: string;
   onReplaced: (characterId: number, imagePath: string) => void;
+  onRemoved: (characterId: number) => void;
   onPromptChange: (characterId: number, prompt: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [replaced, setReplaced] = useState(!!character.replacement_image);
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [localPrompt, setLocalPrompt] = useState(character.appearance_prompt);
@@ -654,6 +657,16 @@ function CharacterReplaceCard({
     toast.success("角色提示词已更新");
   };
 
+  const handleRemove = async () => {
+    setRemoving(true);
+    try {
+      await onRemoved(character.character_id);
+      setReplaced(false);
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   return (
     <div className="rounded-xl border border-border bg-white p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -664,11 +677,23 @@ function CharacterReplaceCard({
           </div>
           <span className="text-sm font-semibold text-foreground">{character.name}</span>
         </div>
-        {replaced && (
-          <span className="text-xs text-emerald-600 flex items-center gap-1">
-            <CheckCircle2 size={12} />已替换
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {replaced && (
+            <span className="text-xs text-emerald-600 flex items-center gap-1">
+              <CheckCircle2 size={12} />已替换
+            </span>
+          )}
+          {replaced && (
+            <button
+              onClick={handleRemove}
+              disabled={removing}
+              className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              title="删除替换图"
+            >
+              {removing ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+            </button>
+          )}
+        </div>
       </div>
 
       <p className="text-xs text-muted-foreground leading-relaxed">{character.description}</p>
@@ -915,6 +940,26 @@ function AnalysisPanel({
     });
   };
 
+  // 删除角色替换图
+  const handleRemoved = async (characterId: number) => {
+    if (!analysisId) return;
+    try {
+      await analyzeApi.removeCharacterImage(analysisId, characterId);
+      setEditableResult(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          characters: prev.characters.map(c =>
+            c.character_id === characterId ? { ...c, replacement_image: undefined } : c
+          ),
+        };
+      });
+      toast.success("替换参考图已删除");
+    } catch (err: unknown) {
+      toast.error(`删除失败: ${err instanceof Error ? err.message : "未知错误"}`);
+    }
+  };
+
   // 更新角色 appearance_prompt
   const handlePromptChange = (characterId: number, prompt: string) => {
     setEditableResult(prev => {
@@ -1105,6 +1150,7 @@ function AnalysisPanel({
                         character={char}
                         analysisId={analysisId!}
                         onReplaced={handleReplaced}
+                        onRemoved={handleRemoved}
                         onPromptChange={handlePromptChange}
                       />
                     ))
@@ -1453,8 +1499,9 @@ export default function Studio() {
     reset();
     setMessages([]);
     const replacedChars = result.characters.filter(c => c.replacement_image);
-    addChatMessage("assistant", `对标视频分析完成！正在基于分析结果创建项目...\n\n**标题**：${result.title}\n**分镜数**：${result.scenes.length} 个\n**人物替换**：${replacedChars.length > 0 ? replacedChars.map(c => c.name).join("、") : "无"}\n\n正在生成脚本...`);
+    addChatMessage("assistant", `对标视频分析完成！直接使用分析分镜创建项目（跳过 LLM 重新生成）...\n\n**标题**：${result.title}\n**分镜数**：${result.scenes.length} 个（直接使用对标分析结果）\n**人物替换**：${replacedChars.length > 0 ? replacedChars.map(c => c.name).join("、") : "无"}\n\n即将进入分镜审核...`);
     try {
+      // 把对标分析的分镜直接作为 preset_scenes 传入，后端会跳过 LLM 生成
       await startWorkflow({
         topic: result.title,
         duration: Math.round(result.total_duration) || 60,
@@ -1462,6 +1509,7 @@ export default function Studio() {
         addSubtitles: true,
         referenceImages: replacedChars.filter(c => c.replacement_image).map(c => c.replacement_image as string),
         style: result.overall_prompt || result.style || undefined,
+        presetScenes: result.scenes as unknown as Array<Record<string, unknown>>,
       });
     } catch (err) {
       addChatMessage("assistant", `❌ 工作流启动失败：${err instanceof Error ? err.message : "启动失败"}`);

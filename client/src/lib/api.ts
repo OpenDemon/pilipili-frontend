@@ -98,6 +98,7 @@ export interface CreateProjectRequest {
   reference_images?: string[];
   add_subtitles?: boolean;
   auto_publish?: boolean;
+  preset_scenes?: Array<Record<string, unknown>>;  // 对标分析分镜，有则跳过 LLM 生成
 }
 
 export interface ApiKeysStatus {
@@ -310,6 +311,20 @@ export const analyzeApi = {
       method: "POST",
       body: formData,
     });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** 删除某个人物的替换参考图（允许重新选择或不替换） */
+  removeCharacterImage: async (
+    analysisId: string,
+    characterId: number
+  ): Promise<{ message: string; character_id: number }> => {
+    const url = `${API_BASE}/api/analyze/${analysisId}/remove-character-image?character_id=${characterId}`;
+    const res = await fetch(url, { method: "DELETE" });
     if (!res.ok) {
       const error = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(error.detail || `HTTP ${res.status}`);

@@ -160,6 +160,7 @@ export function useWorkflow() {
       voiceId?: string;
       referenceImages?: string[];
       addSubtitles?: boolean;
+      presetScenes?: Array<Record<string, unknown>>;  // 对标分析分镜，有则跳过 LLM
     }) => {
       setState({
         ...INITIAL_STATE,
@@ -180,6 +181,7 @@ export function useWorkflow() {
           voice_id: params.voiceId,
           reference_images: params.referenceImages,
           add_subtitles: params.addSubtitles ?? true,
+          preset_scenes: params.presetScenes,
         });
 
         const projectId = res.project_id;
