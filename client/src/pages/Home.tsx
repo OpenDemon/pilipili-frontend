@@ -17,6 +17,9 @@ import {
   CheckCircle2,
   Film,
   Settings,
+  ScanSearch,
+  Layers,
+  User,
 } from "lucide-react";
 
 const FEATURES = [
@@ -26,9 +29,19 @@ const FEATURES = [
     desc: "输入一句话，AI 自动生成结构化分镜脚本，支持 DeepSeek、Kimi、Gemini 等多种大模型。",
   },
   {
-    icon: Image,
-    title: "首帧精确锁定",
-    desc: "先用 Nano Banana 生成 4K 关键帧图像，再用图生视频，画质下限极高，主体不漂移。",
+    icon: ScanSearch,
+    title: "对标视频分析",
+    desc: "上传任意参考视频，Gemini 自动反推每个分镜的提示词、识别人物、分析风格，一键复用。",
+  },
+  {
+    icon: User,
+    title: "人物替换工作流",
+    desc: "上传角色参考图（支持四宫格三视图），Kling Omni 多参考模式保持全片人物高度一致。",
+  },
+  {
+    icon: Layers,
+    title: "Kling Omni Multi-Shot",
+    desc: "全新 Kling 3.0 Omni 引擎，支持多参考生视频、首尾帧、shot_type intelligence，分镜更连贯。",
   },
   {
     icon: Volume2,
@@ -36,14 +49,14 @@ const FEATURES = [
     desc: "先生成 MiniMax TTS 配音并测量精确时长，再以此控制视频 duration，音画永远同步。",
   },
   {
-    icon: Video,
-    title: "双引擎视频生成",
-    desc: "Kling 3.0 适合动作/产品类，Seedance 1.5 适合叙事/多角色类，系统智能推荐或手动选择。",
+    icon: Scissors,
+    title: "剪映分轨草稿",
+    desc: "每个分镜独立轨道，自动生成剪映草稿，导入即可在时间线上精细调整，无需手动整理素材。",
   },
   {
-    icon: Scissors,
-    title: "无感本地拼接",
-    desc: "内置 FFmpeg 自动完成 xfade 转场 + WhisperX 字幕烧录，进度条到 100% 就是成品。",
+    icon: Image,
+    title: "首帧精确锁定",
+    desc: "先用 Nano Banana 生成 4K 关键帧图像，再用图生视频，画质下限极高，主体不漂移。",
   },
   {
     icon: Sparkles,
@@ -53,17 +66,19 @@ const FEATURES = [
 ];
 
 const WORKFLOW_STEPS = [
-  { step: "01", label: "输入创意", desc: "一句话描述你想要的视频" },
-  { step: "02", label: "审核分镜", desc: "确认 AI 生成的脚本和分镜" },
-  { step: "03", label: "自动生成", desc: "系统并行生成图像、配音、视频" },
-  { step: "04", label: "成片交付", desc: "下载 MP4 或导出剪映草稿" },
+  { step: "01", label: "输入创意 / 上传对标视频", desc: "一句话描述，或上传参考视频让 AI 反推分镜" },
+  { step: "02", label: "审核分镜", desc: "确认 AI 生成的脚本，可编辑每个分镜的旁白和提示词" },
+  { step: "03", label: "自动生成", desc: "并行生成首帧图像、TTS 配音、Kling Omni 视频" },
+  { step: "04", label: "成片交付", desc: "下载 MP4 成片 + 剪映分轨草稿双输出" },
 ];
 
 const VS_TABLE = [
-  { dim: "交互范式", libtv: "节点画布，手动触发", huobao: "表单填写，按步操作", ours: "自然语言对话，一句话驱动" },
+  { dim: "交互范式", libtv: "节点画布，手动触发", huobao: "表单填写，按步操作", ours: "自然语言对话 + 对标视频分析，一句话驱动" },
+  { dim: "对标视频反推", libtv: "无", huobao: "无", ours: "Gemini 自动分析分镜结构、反推提示词、识别人物" },
+  { dim: "人物一致性", libtv: "提示词引导", huobao: "参考图上传", ours: "四宫格三视图 + Kling Omni 多参考模式" },
+  { dim: "视频引擎", libtv: "Kling 1.x", huobao: "单引擎", ours: "Kling 3.0 Omni + Seedance 1.5 双引擎智能路由" },
   { dim: "音画同步", libtv: "手动剪辑对齐", huobao: "未明确支持", ours: "先测配音时长，再控视频 duration" },
-  { dim: "主体一致性", libtv: "提示词引导", huobao: "参考图上传", ours: "Nano Banana 首帧锁定 + Kling Reference API" },
-  { dim: "最终交付", libtv: "手动下载导入剪映", huobao: "压制 MP4", ours: "自动生成剪映草稿 + MP4 双输出" },
+  { dim: "最终交付", libtv: "手动下载导入剪映", huobao: "压制 MP4", ours: "剪映分轨草稿 + MP4 双输出" },
   { dim: "记忆系统", libtv: "无", huobao: "无", ours: "Mem0 数字孪生，越用越懂你" },
   { dim: "Agent 调用", libtv: "无", huobao: "无", ours: "封装为标准 Skill，可被任意 Agent 调用" },
 ];

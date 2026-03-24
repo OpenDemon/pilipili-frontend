@@ -273,7 +273,7 @@ export const uploadApi = {
 
 export const analyzeApi = {
   /** 上传对标视频，触发 Gemini 分析（返回 analysis_id，需轮询结果） */
-  uploadVideo: async (file: File): Promise<{ analysis_id: string; status: string; message: string }> => {
+  uploadVideo: async (file: File): Promise<ReferenceAnalysisResponse> => {
     const formData = new FormData();
     formData.append("file", file);
     const url = `${API_BASE}/api/analyze/upload`;
@@ -290,6 +290,10 @@ export const analyzeApi = {
 
   /** 轮询对标视频分析结果 */
   getResult: (analysisId: string) =>
+    request<ReferenceAnalysisResponse>(`/api/analyze/${analysisId}`),
+
+  /** 别名：轮询对标视频分析结果 */
+  getAnalysis: (analysisId: string) =>
     request<ReferenceAnalysisResponse>(`/api/analyze/${analysisId}`),
 
   /** 为某个人物上传替换参考图（图片或视频） */
