@@ -59,6 +59,7 @@ import {
   Camera,
 } from "lucide-react";
 import { useWorkflow, AgentLog } from "@/hooks/useWorkflow";
+import { emitDebugLog } from "../components/DebugPanel";
 import { useProjects } from "@/hooks/useProjects";
 import {
   Scene,
@@ -599,8 +600,21 @@ function AnalysisPanel({
       try {
         const data = await analyzeApi.getAnalysis(id);
         setAnalysisData(data);
-        if (data.status === "completed" || data.status === "failed") stopPolling();
-      } catch { stopPolling(); }
+        if (data.status === "completed" || data.status === "failed") {
+          stopPolling();
+          if (data.status === "failed" && data.error) {
+            emitDebugLog({
+              level: "error",
+              category: "对标分析",
+              message: `Gemini 分析失败`,
+              detail: data.error,
+            });
+          }
+        }
+      } catch (e) {
+        emitDebugLog({ level: "error", category: "对标分析", message: `轮询异常: ${e}` });
+        stopPolling();
+      }
     }, 2000);
   }, [stopPolling]);
 
@@ -618,7 +632,14 @@ function AnalysisPanel({
       if (res.status === "processing") startPolling(res.analysis_id);
       toast.success("视频上传成功，Gemini 分析中...");
     } catch (err: unknown) {
-      toast.error(`上传失败: ${err instanceof Error ? err.message : "未知错误"}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`上传失败: ${msg}`);
+      emitDebugLog({
+        level: "error",
+        category: "对标分析",
+        message: `视频上传失败: ${msg}`,
+        detail: err instanceof Error ? err.stack : String(err),
+      });
     } finally {
       setUploading(false);
     }

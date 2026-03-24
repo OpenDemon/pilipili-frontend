@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Studio from "./pages/Studio";
 import Settings from "./pages/Settings";
+import DebugPanel from "./components/DebugPanel";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function App() {
         <TooltipProvider>
           <Toaster position="top-right" />
           <Router />
+          <DebugPanel />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
