@@ -1235,6 +1235,7 @@ function AgentConsole({
   onDownload,
   onExportDraft,
   onFeedback,
+  onRetry,
 }: {
   logs: AgentLog[];
   stage: WorkflowStage;
@@ -1244,6 +1245,7 @@ function AgentConsole({
   onDownload: () => void;
   onExportDraft: () => void;
   onFeedback: (rating: number) => void;
+  onRetry?: () => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [feedbackGiven, setFeedbackGiven] = useState(false);
@@ -1382,7 +1384,7 @@ function AgentConsole({
             <span className="text-xs font-medium">生成失败</span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">请检查 API Keys 配置，或查看日志了解详情。</p>
-          <Button variant="outline" size="sm" className="w-full gap-2 text-xs" onClick={() => window.location.reload()}>
+          <Button variant="outline" size="sm" className="w-full gap-2 text-xs" onClick={onRetry}>
             <RefreshCw size={12} />重试
           </Button>
         </div>
@@ -1422,6 +1424,8 @@ export default function Studio() {
   const [referenceImages, setReferenceImages] = useState<UploadResult[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [input, setInput] = useState("");
+  // 保存上次工作流参数，用于重试
+  const [lastWorkflowParams, setLastWorkflowParams] = useState<Parameters<typeof startWorkflow>[0] | null>(null);
   const [engine, setEngine] = useState<"kling" | "seedance" | "auto">("kling");
   const [multiShot, setMultiShot] = useState(true);
   const [resolution, setResolution] = useState<"720p" | "1080p">("1080p");
@@ -1544,8 +1548,10 @@ export default function Studio() {
     const refInfo = referenceImages.length > 0 ? `\n**角色参考图**：${referenceImages.length} 张` : "";
     addChatMessage("assistant", `好的！\n\n**主题**：${text}\n**目标时长**：${duration}s\n**视频引擎**：${engine === "auto" ? "智能路由" : engine.toUpperCase()}\n**Multi-Shot**：${multiShot ? "开启" : "关闭"}${refInfo}\n\n正在生成分镜脚本...`);
 
+    const wfParams = { topic: text, duration, engine, addSubtitles: true, referenceImages: referenceImages.map(r => r.path), style: undefined };
+    setLastWorkflowParams(wfParams);
     try {
-      await startWorkflow({ topic: text, duration, engine, addSubtitles: true, referenceImages: referenceImages.map(r => r.path), style: undefined });
+      await startWorkflow(wfParams);
     } catch (err) {
       addChatMessage("assistant", `❌ 工作流启动失败：${err instanceof Error ? err.message : "启动失败"}\n\n请确认后端服务已启动。`);
     }
@@ -1756,6 +1762,15 @@ export default function Studio() {
           window.open(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/projects/${workflow.projectId}/download/draft`, "_blank");
         }}
         onFeedback={submitFeedback}
+        onRetry={lastWorkflowParams ? async () => {
+          reset();
+          addChatMessage("assistant", `重试中...重新发起上次的工作流。`);
+          try {
+            await startWorkflow(lastWorkflowParams);
+          } catch (err) {
+            addChatMessage("assistant", `❌ 重试失败：${err instanceof Error ? err.message : "未知错误"}`);
+          }
+        } : undefined}
       />
     </div>
   );
