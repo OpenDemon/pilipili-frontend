@@ -203,3 +203,33 @@
     animation: slide-up 0.3s ease-out forwards;
   }
 }
+
+/* ─── 全局滚动条美化（所有方向，所有区域） ─────────────────────────────────────
+ * 用细线风格替换系统默认粗滑块，与整体设计语言保持一致
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.75 0.02 240) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: oklch(0.78 0.025 240);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.62 0.05 250);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
