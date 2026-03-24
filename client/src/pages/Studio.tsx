@@ -1398,7 +1398,27 @@ export default function Studio() {
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [analysisPanelOpen, setAnalysisPanelOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [backendOnline, setBackendOnline] = useState(false);
+
+  // ─── localStorage 对话持久化 ─────────────────────────────────────────────────
+  const CHAT_KEY = (pid: string) => `pilipili_chat_${pid}`;
+
+  const saveMsgsToStorage = useCallback((pid: string, msgs: ChatMessage[]) => {
+    try {
+      const serializable = msgs.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }));
+      localStorage.setItem(CHAT_KEY(pid), JSON.stringify(serializable));
+    } catch { /* quota exceeded 等异常静默处理 */ }
+  }, []);
+
+  const loadMsgsFromStorage = useCallback((pid: string): ChatMessage[] => {
+    try {
+      const raw = localStorage.getItem(CHAT_KEY(pid));
+      if (!raw) return [];
+      const arr = JSON.parse(raw) as Array<{ id: string; role: string; content: string; timestamp: string }>;
+      return arr.map(m => ({ ...m, role: m.role as "user" | "assistant", timestamp: new Date(m.timestamp) }));
+    } catch { return []; }
+  }, []);
   const [referenceImages, setReferenceImages] = useState<UploadResult[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [input, setInput] = useState("");
@@ -1411,15 +1431,46 @@ export default function Studio() {
   const { projects, refetch: refetchProjects } = useProjects();
 
   const addChatMessage = useCallback((role: "user" | "assistant", content: string) => {
-    setMessages((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, role, content, timestamp: new Date() }]);
-  }, []);
+    setMessages((prev) => {
+      const newMsg: ChatMessage = { id: `${Date.now()}-${Math.random()}`, role, content, timestamp: new Date() };
+      const updated = [...prev, newMsg];
+      // 如果当前有关联项目，同步保存到 localStorage
+      const pid = workflow.projectId;
+      if (pid) {
+        try {
+          const serializable = updated.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }));
+          localStorage.setItem(`pilipili_chat_${pid}`, JSON.stringify(serializable));
+        } catch { /* 静默处理 */ }
+      }
+      return updated;
+    });
+  }, [workflow.projectId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 监听 workflow.projectId 变化：新项目创建后更新 currentProjectId
   useEffect(() => {
-    if (params.projectId) restoreProject(params.projectId);
+    const pid = workflow.projectId;
+    if (pid && pid !== currentProjectId) {
+      setCurrentProjectId(pid);
+      // 如果已有对话，立即保存到新项目 ID
+      if (messages.length > 0) {
+        saveMsgsToStorage(pid, messages);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow.projectId]);
+
+  useEffect(() => {
+    if (params.projectId) {
+      const saved = loadMsgsFromStorage(params.projectId);
+      if (saved.length > 0) setMessages(saved);
+      setCurrentProjectId(params.projectId);
+      restoreProject(params.projectId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.projectId]);
 
   useEffect(() => {
@@ -1479,7 +1530,12 @@ export default function Studio() {
     if (!input.trim()) return;
     const text = input.trim();
     setInput("");
+    // 保存当前项目对话再重置
+    if (workflow.projectId && messages.length > 0) {
+      saveMsgsToStorage(workflow.projectId, messages);
+    }
     reset();
+    setCurrentProjectId(null);
     setMessages([]);
 
     addChatMessage("user", text);
@@ -1496,7 +1552,12 @@ export default function Studio() {
   };
 
   const handleCreateProjectFromAnalysis = async (_analysisId: string, result: ReferenceVideoAnalysisResult) => {
+    // 保存当前项目对话再重置
+    if (workflow.projectId && messages.length > 0) {
+      saveMsgsToStorage(workflow.projectId, messages);
+    }
     reset();
+    setCurrentProjectId(null);
     setMessages([]);
     const replacedChars = result.characters.filter(c => c.replacement_image);
     addChatMessage("assistant", `对标视频分析完成！直接使用分析分镜创建项目（跳过 LLM 重新生成）...\n\n**标题**：${result.title}\n**分镜数**：${result.scenes.length} 个（直接使用对标分析结果）\n**人物替换**：${replacedChars.length > 0 ? replacedChars.map(c => c.name).join("、") : "无"}\n\n即将进入分镜审核...`);
@@ -1525,7 +1586,18 @@ export default function Studio() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         projects={projects}
-        onSelectProject={(id) => { reset(); setMessages([]); restoreProject(id); }}
+        onSelectProject={(id) => {
+          // 先保存当前项目对话（如果有）
+          if (workflow.projectId && messages.length > 0) {
+            saveMsgsToStorage(workflow.projectId, messages);
+          }
+          reset();
+          // 从 localStorage 加载目标项目对话
+          const saved = loadMsgsFromStorage(id);
+          setMessages(saved);
+          setCurrentProjectId(id);
+          restoreProject(id);
+        }}
       />
 
       {/* 中间主区 */}
