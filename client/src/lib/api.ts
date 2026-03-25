@@ -99,6 +99,7 @@ export interface CreateProjectRequest {
   add_subtitles?: boolean;
   auto_publish?: boolean;
   preset_scenes?: Array<Record<string, unknown>>;  // 对标分析分镜，有则跳过 LLM 生成
+  resolution?: "720p" | "1080p" | "4K";  // 输出分辨率
 }
 
 export interface ApiKeysStatus {
@@ -239,6 +240,13 @@ export const projectApi = {
   submitFeedback: (projectId: string, rating: number) =>
     request<{ message: string }>(
       `/api/projects/${projectId}/feedback?rating=${rating}`,
+      { method: "POST" }
+    ),
+
+  /** 断点续传：从已有 keyframes+audio 直接跳到视频生成阶段 */
+  resume: (projectId: string, videoEngine: string = "kling", addSubtitles: boolean = true) =>
+    request<{ project_id: string; message: string }>(
+      `/api/projects/${projectId}/resume?video_engine=${videoEngine}&add_subtitles=${addSubtitles}`,
       { method: "POST" }
     ),
 };

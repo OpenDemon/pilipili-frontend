@@ -165,7 +165,8 @@ export function useWorkflow() {
       voiceId?: string;
       referenceImages?: string[];
       addSubtitles?: boolean;
-      presetScenes?: Array<Record<string, unknown>>;  // 对标分析分镜，有则跳过 LLM
+      presetScenes?: Array<Record<string, unknown>>;  // 对标剖析分镜，有则跳过 LLM
+      resolution?: "720p" | "1080p" | "4K";  // 输出分辨率
     }) => {
       setState({
         ...INITIAL_STATE,
@@ -187,6 +188,7 @@ export function useWorkflow() {
           reference_images: params.referenceImages,
           add_subtitles: params.addSubtitles ?? true,
           preset_scenes: params.presetScenes,
+          resolution: params.resolution ?? "1080p",
         });
 
         const projectId = res.project_id;
@@ -268,6 +270,35 @@ export function useWorkflow() {
     [state.projectId, addLog]
   );
 
+  // 断点续传
+  const resumeProject = useCallback(
+    async (projectId: string, engine: string = "kling") => {
+      // 重置状态，保留 projectId
+      setState({
+        ...INITIAL_STATE,
+        projectId,
+        stage: "generating_video",
+        progress: 50,
+        message: "断点续传：从视频生成阶段继续...",
+        logs: [],
+      });
+      addLog("info", `断点续传项目: ${projectId}`);
+
+      try {
+        await projectApi.resume(projectId, engine);
+        // 连接 WebSocket 监听进度
+        connectWebSocket(projectId);
+        return projectId;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "续传失败";
+        setState((prev) => ({ ...prev, stage: "failed", error: msg }));
+        addLog("error", `断点续传失败: ${msg}`);
+        throw err;
+      }
+    },
+    [addLog, connectWebSocket]
+  );
+
   // 重置状态
   const reset = useCallback(() => {
     wsRef.current?.disconnect();
@@ -321,6 +352,7 @@ export function useWorkflow() {
     submitFeedback,
     reset,
     restoreProject,
+    resumeProject,
     addLog,
   };
 }

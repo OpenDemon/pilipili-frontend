@@ -1236,6 +1236,7 @@ function AgentConsole({
   onExportDraft,
   onFeedback,
   onRetry,
+  onResume,
 }: {
   logs: AgentLog[];
   stage: WorkflowStage;
@@ -1246,6 +1247,7 @@ function AgentConsole({
   onExportDraft: () => void;
   onFeedback: (rating: number) => void;
   onRetry?: () => void;
+  onResume?: () => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [feedbackGiven, setFeedbackGiven] = useState(false);
@@ -1384,9 +1386,14 @@ function AgentConsole({
             <span className="text-xs font-medium">生成失败</span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">请检查 API Keys 配置，或查看日志了解详情。</p>
-          <Button variant="outline" size="sm" className="w-full gap-2 text-xs" onClick={onRetry}>
-            <RefreshCw size={12} />重试
+          <Button variant="outline" size="sm" className="w-full gap-2 text-xs mb-2" onClick={onRetry}>
+            <RefreshCw size={12} />重试（从头开始）
           </Button>
+          {onResume && (
+            <Button variant="default" size="sm" className="w-full gap-2 text-xs" onClick={onResume}>
+              <RefreshCw size={12} />断点续传（复用已有图片+配音）
+            </Button>
+          )}
         </div>
       )}
     </aside>
@@ -1431,7 +1438,7 @@ export default function Studio() {
   const [resolution, setResolution] = useState<"720p" | "1080p">("1080p");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { state: workflow, startWorkflow, submitReview, updateScene, submitFeedback, reset, restoreProject } = useWorkflow();
+  const { state: workflow, startWorkflow, submitReview, updateScene, submitFeedback, reset, restoreProject, resumeProject } = useWorkflow();
   const { projects, refetch: refetchProjects } = useProjects();
 
   const addChatMessage = useCallback((role: "user" | "assistant", content: string) => {
@@ -1548,7 +1555,7 @@ export default function Studio() {
     const refInfo = referenceImages.length > 0 ? `\n**角色参考图**：${referenceImages.length} 张` : "";
     addChatMessage("assistant", `好的！\n\n**主题**：${text}\n**目标时长**：${duration}s\n**视频引擎**：${engine === "auto" ? "智能路由" : engine.toUpperCase()}\n**Multi-Shot**：${multiShot ? "开启" : "关闭"}${refInfo}\n\n正在生成分镜脚本...`);
 
-    const wfParams = { topic: text, duration, engine, addSubtitles: true, referenceImages: referenceImages.map(r => r.path), style: undefined };
+    const wfParams = { topic: text, duration, engine, addSubtitles: true, referenceImages: referenceImages.map(r => r.path), style: undefined, resolution: resolution as "720p" | "1080p" | "4K" };
     setLastWorkflowParams(wfParams);
     try {
       await startWorkflow(wfParams);
@@ -1769,6 +1776,14 @@ export default function Studio() {
             await startWorkflow(lastWorkflowParams);
           } catch (err) {
             addChatMessage("assistant", `❌ 重试失败：${err instanceof Error ? err.message : "未知错误"}`);
+          }
+        } : undefined}
+        onResume={workflow.projectId && workflow.stage === "failed" ? async () => {
+          addChatMessage("assistant", `断点续传中，复用已有图片和配音直接生成视频...`);
+          try {
+            await resumeProject(workflow.projectId!, engine);
+          } catch (err) {
+            addChatMessage("assistant", `❌ 断点续传失败：${err instanceof Error ? err.message : "未知错误"}`);
           }
         } : undefined}
       />
