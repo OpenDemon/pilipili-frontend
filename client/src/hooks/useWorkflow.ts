@@ -110,6 +110,11 @@ export function useWorkflow() {
         return { ...prev, ...newState };
       });
 
+      // 工作流终止（完成或失败）时主动断开 WebSocket，停止重连
+      if (status.stage === "completed" || status.stage === "failed") {
+        wsRef.current?.disconnect();
+      }
+
       // 添加日志
       const levelMap: Record<string, AgentLog["level"]> = {
         generating_script: "info",
